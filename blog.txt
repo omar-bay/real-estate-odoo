@@ -1,0 +1,210 @@
+sample __manifest__.py
+    https://github.com/odoo/odoo/blob/fc92728fb2aa306bf0e01a7f9ae1cfa3c1df0e10/addons/crm/__manifest__.py#L1-L67
+
+to make it appear in apps, we appended to __manifest__.py
+    'application': True
+
+creating table estate_property
+
+ORM layer makes us avoid writing SQL
+
+we create python object, and ORM will translate them to tables
+
+```
+from odoo import models
+
+class TestModel(models.Model):
+    _name = "test.model"
+```
+ORM will generate database table names test_model
+it reads the '.' as '_'
+
+sample entity
+````````````````````````````````````````````````````````````````````````````````````````````````````````````````
+from odoo import fields, models
+
+class RecurringPlan(models.Model):
+    _name = "crm.recurring.plan"
+    _description = "CRM Recurring revenue plans"
+    _order = "sequence"
+
+    name = fields.Char('Plan Name', required=True, translate=True)
+    number_of_months = fields.Integer('# Months', required=True)
+    active = fields.Boolean('Active', default=True)                                                              |
+    sequence = fields.Integer('Sequence', default=10)                                                            |
+                                                                                                                 |
+    _sql_constraints = [                                                                                         |
+        ('check_number_of_months', 'CHECK(number_of_months >= 0)', 'The number of month can\'t be negative.'),   |
+    ]                                                                                                            |
+``````````````````````````````````````````````````````````````````````````````````````````````````````````````````
+this is going in the module_name/models/crm_recurring_plan.py file
+then it's imported in the module_name/models/__init__.py file
+and the folder models is imported in module_name/__init__.py
+
+don't forget to upgrade your module when editing in the table.
+
+test table:
+    psql -d demo15
+    SELECT COUNT(*) FROM estate_property;
+
+a file importing data is located in the module_name/data folder
+when the data is related to security, it's located in the module_name/security folder
+when data is related to view and actions, it's located in the module_name/views folder
+
+all of these files should be declared in 'data' list in __manifest__.py file
+
+now we do some UI
+link a menu to estate.property table so we can create new records.
+
+when you do a view, add it to __manifest__.py
+
+the menus inside the module are called action menus
+
+the selling price should be read-only and the number of bedrooms and the availability date should have default values.
+
+the selection values are in small case
+
+next step is to define our own views
+
+make the tree in the main views. the estate_property_views.xml
+
+the <group/> seems to put wrap data with value
+the <field name="attribute"/> gets the data value
+
+define a link to res.partner
+partner_id = fields.Many2one("res.partner", string="Partner")
+then we can
+print(my_test_object.partner_id.name)
+
+add security to each model
+
+the action attribute in menuitem looks like model name but with _action
+
+the salesperson must be an employee (odoo user)
+res.partner: a partner is a physical or legal entity. It can be a company, an individual or even a contact address.
+res.users: the users of the system. Users can be ‘internal’, i.e. they have access to the Odoo backend. Or they can be ‘portal’, i.e. they cannot access the backend, only the frontend
+
+user_id = fields.Many2one('res.users', string='Salesperson', index=True, tracking=True, default=lambda self: self.env.user)
+user_email = fields.Char('User Email', related='user_id.email', readonly=True)
+
+~~self.env~~
+self.env.cr or self._cr is the database cursor object; it is used for querying the database
+self.env.uid or self._uid is the current user’s database id
+self.env.user is the current user’s record
+self.env.context or self._context is the context dictionary
+self.env.ref(xml_id) returns the record corresponding to an XML id
+self.env[model_name] returns an instance of the given model
+
+tags are Many2many relation
+
+example
+tax_ids = fields.Many2many("account.tax", string="Taxes")
+for tax in my_test_object.tax_ids:
+    print(tax.name)
+
+to make a One2many, you need to have a Many2one there
+
+the object self is a recordset
+
+computed fields are not in the database
+there's a store=True param
+
+when something is triggred in the form view, self will be a single record
+
+By assigning type="object" to our button, the Odoo framework will execute a Python method with name="action_do_something" on the given model.
+action method should always return something
+
+buttons can be linked to actions
+<button type="action" name="%(test.test_model_action)d" string="My Action"/>
+
+about the python constraints for the selling price not to be lower than 90% of expected price,
+i'll use it in offer
+
+SQL constraints are more efficient than python constraints
+
+in the form header, we want the state or status or stage bar
+we do this for a fields.Selection type
+<field name="state" widget="statusbar" statusbar_visible="new,offer recieved,offer accepted,sold"/>
+
+same fields multiple times are not supported
+
+default list order can be defined directly in the model as
+_order = "id desc"
+descending id
+
+ordering can also be on the view level:
+<tree default_order="date desc">
+    <field name="date"/>
+    ...
+
+in estate.property.type we have a field sequence to allow manual sort
+
+in the widget fields we can all the options attribute to make some customizations
+
+a color picker widget
+<field name="color" widget="color_picker"/>
+
+state selection is a preserved field in odoo just like active. 
+we use its functionality in states= in view
+
+other way to alter visibility
+<form>
+    <field name="description" attrs="{'invisible': [('is_partner', '=', False)]}"/>
+    <field name="is_partner" invisible="1"/>
+</form>
+
+to prevent adding new offer, we did readonly under condition
+
+to make list/tree edit without opening form:
+editable='top' or editable='bottom'
+
+we can't use decoration in view without the field existing in tree
+i'm inserting the field but setting invisible="1"
+
+decoration trees and stuff
+https://www.iwesabe.com/blog/how-to-add-colors-to-tree-view-in-odoo
+
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+partner_id = fields.Many2one("res.partner", string="Partner")
+description = fields.Char(related="partner_id.name")
+~~ equivalent to ~~
+partner_id = fields.Many2one("res.partner", string="Partner")
+description = fields.Char(compute="_compute_description")
+@api.depends("partner_id.name")
+def _compute_description(self):
+    for record in self:
+        record.description = record.partner_id.name
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+estate_property_offer doesn't have a direct relation with estate_property_type, we we do a relation through estate_property:
+property_type_id = fields.Many2one('estate.property.type', related="property_id.property_type_id", store=True, string="Property Type")
+
+we need to display the list of properties linked to a salesperson in Settings/Users&Companies/Users form view.
+to do this, we need to add a field to res.users. but we inherit
+---
+from odoo import fields, models
+class InheritedModel(models.Model):
+    _inherit = "inherited.model"
+    new_field = fields.Char(string="New Field")
+---
+
+create a new module for linking modules
+auto_install: True in manifest there
+
+<kanban>
+    <field name="state"/>
+    <templates>
+        <t t-name="kanban-box">
+            <div class="oe_kanban_global_click">
+                <field name="name"/>
+            </div>
+            <div t-if="record.state.raw_value == 'new'">
+                This is new!
+            </div>
+        </t>
+    </templates>
+</kanban>
+t-if: the <div> element is rendered if the condition is true.
+record: an object with all the requested fields as its attributes. 
+
+kanban error dict.record.state is undefined, so i added the field at the top
